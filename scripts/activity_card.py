@@ -216,7 +216,7 @@ text{{font-family:'SF Mono',Menlo,Consolas,'DejaVu Sans Mono','Liberation Mono',
 .trend{{fill:none;stroke:{p['trend']};stroke-opacity:.85;stroke-width:1.1;stroke-linejoin:round;stroke-linecap:round}}
 .axis{{stroke:{p['rule']};stroke-width:1}}
 </style>
-<text class="hd" x="{PAD_L}" y="20">CONTRIBUTION ACTIVITY · 365 DAYS · LOG SCALE</text>
+<text class="hd" x="{PAD_L}" y="20">CONTRIBUTION ACTIVITY · {n} DAYS · LOG SCALE</text>
 <text class="meta" x="{W - PAD_R}" y="20" text-anchor="end">{esc(login)} · {esc(stamp)}</text>
 <g class="bars">{''.join(bars)}</g>
 <polyline class="trend" points="{pts}"/>
