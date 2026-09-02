@@ -15,8 +15,10 @@ Make public**. Nothing else in this repo works until that is done.
 
 ## What the activity card is
 
-`scripts/activity_card.py` renders a 900×220 SVG of the last 365 days of public
-contributions. GitHub's own calendar buckets every day into one of four shades,
+`scripts/activity_card.py` renders a 900×220 SVG of the trailing year of public
+contributions. The GraphQL calendar comes back as whole weeks, so the series is
+usually a few days over 365; the header states the real count rather than
+assuming 365. GitHub's own calendar buckets every day into one of four shades,
 so a 138-contribution day is drawn exactly like a 5-contribution day. This card
 plots the real daily count on a log scale, with a 7-day trend line over it, so
 both the everyday baseline and the bursts stay legible.

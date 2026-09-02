@@ -48,6 +48,7 @@ STATS_Y = 204
 
 PALETTES = {
     "dark": {
+        "ground": "#0d1117",
         "ink": "#e6e1d7",
         "dim": "#79838d",
         "faint": "#4d555e",
@@ -56,6 +57,7 @@ PALETTES = {
         "trend": "#8fa8b4",
     },
     "light": {
+        "ground": "#ffffff",
         "ink": "#1b1d22",
         "dim": "#5c656d",
         "faint": "#8b939b",
@@ -216,7 +218,8 @@ text{{font-family:'SF Mono',Menlo,Consolas,'DejaVu Sans Mono','Liberation Mono',
 .trend{{fill:none;stroke:{p['trend']};stroke-opacity:.85;stroke-width:1.1;stroke-linejoin:round;stroke-linecap:round}}
 .axis{{stroke:{p['rule']};stroke-width:1}}
 </style>
-<text class="hd" x="{PAD_L}" y="20">CONTRIBUTION ACTIVITY · 365 DAYS · LOG SCALE</text>
+<rect x="0" y="0" width="{W}" height="{H}" fill="{p['ground']}"/>
+<text class="hd" x="{PAD_L}" y="20">CONTRIBUTION ACTIVITY · {n} DAYS · LOG SCALE</text>
 <text class="meta" x="{W - PAD_R}" y="20" text-anchor="end">{esc(login)} · {esc(stamp)}</text>
 <g class="bars">{''.join(bars)}</g>
 <polyline class="trend" points="{pts}"/>
