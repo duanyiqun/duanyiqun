@@ -1,7 +1,7 @@
 <picture>
   <source media="(prefers-color-scheme: dark)"  srcset="https://raw.githubusercontent.com/duanyiqun/duanyiqun/output/activity-dark.svg">
   <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/duanyiqun/duanyiqun/output/activity-light.svg">
-  <img width="900" alt="Contribution activity over the last 365 days" src="https://raw.githubusercontent.com/duanyiqun/duanyiqun/output/activity-light.svg">
+  <img width="900" alt="Contribution activity over the trailing year" src="https://raw.githubusercontent.com/duanyiqun/duanyiqun/output/activity-light.svg">
 </picture>
 
 Post-training, world models, brain foundation models, ultrasound, robotics.
