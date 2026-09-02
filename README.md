@@ -4,7 +4,6 @@
   <img width="900" alt="Contribution activity over the trailing year" src="https://raw.githubusercontent.com/duanyiqun/duanyiqun/output/activity-light.svg">
 </picture>
 
-Post-training, world models, brain foundation models, ultrasound, robotics.
 
 <!--
   Step 1 of the profile rebuild: the activity card above.
