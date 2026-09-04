@@ -209,8 +209,10 @@ def render(days, theme_name, login, stamp, note):
             continue
         size = min_mark + (CELL - min_mark) * t(c)
         off = (CELL - size) / 2
-        fill = TOKENS["event.verdigris"] if i in events else ramp(th["stops"], t(c))
-        marks.append(f'<rect class="m w{col}" x="{x + off:.2f}" y="{y + off:.2f}" '
+        is_event = i in events
+        fill = TOKENS["event.verdigris"] if is_event else ramp(th["stops"], t(c))
+        cls = "m ev" if is_event else "m"
+        marks.append(f'<rect class="{cls} w{col}" x="{x + off:.2f}" y="{y + off:.2f}" '
                      f'width="{size:.2f}" height="{size:.2f}" fill="{fill}"/>')
 
     ticks, seen = [], None
@@ -239,7 +241,13 @@ def render(days, theme_name, login, stamp, note):
     # .22 to full rather than from zero, so every frame - including the one a
     # thumbnail or the GitHub mobile app captures - shows the whole mosaic. The
     # base state is the finished state, so not animating at all is also correct.
-    stagger = "".join(f".w{c}{{animation-delay:{0.10 + c * 0.017:.3f}s}}" for c in range(cols))
+    # animation-delay is a list property: one value would be applied to both
+    # animations, so the event cells need their own two-value rule. Same
+    # specificity as the .m rule, so these have to come after it.
+    stagger = "".join(f".m.w{c}{{animation-delay:{0.10 + c * 0.017:.3f}s}}" for c in range(cols))
+    stagger += "".join(
+        f".ev.w{c}{{animation-delay:{0.10 + c * 0.017:.3f}s,-{(c / max(1, cols - 1)) * 2.1:.2f}s}}"
+        for c in range(cols))
 
     return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width:.0f} {height:.0f}" width="{width:.0f}" height="{height:.0f}" role="img" aria-label="{esc(login)} contribution activity: {total:,} contributions over {n} days, peak {peak} on {peak_date}">
 <title>{esc(login)} — {total:,} contributions, peak {peak} on {peak_date}</title>
@@ -253,7 +261,9 @@ text{{font-family:{MONO}}}
 .lbl{{font-size:9px;letter-spacing:.1em;fill:{th["sub"]}}}
 @media (prefers-reduced-motion:no-preference){{
 .m{{animation:wash .45s cubic-bezier(.16,1,.3,1) 1 backwards}}
+.ev{{animation:wash .45s cubic-bezier(.16,1,.3,1) 1 backwards,pulse 5.4s ease-in-out infinite}}
 @keyframes wash{{from{{opacity:.22}}to{{opacity:1}}}}
+@keyframes pulse{{0%,100%{{fill-opacity:1}}50%{{fill-opacity:.72}}}}
 {stagger}
 }}
 </style>

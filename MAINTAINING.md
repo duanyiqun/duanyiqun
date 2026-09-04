@@ -90,14 +90,38 @@ previous card in place rather than publishing a broken one.
   window. GitHub's CDN has had incidents where raw files stayed stale much
   longer; there is no purge endpoint for this, so wait it out.
 
-## Animation, and why it starts at .22
+## Animation
 
-The card washes in week by week, once, then holds. Each column lifts from `.22`
-opacity to full rather than from zero, so every frame shows the whole mosaic —
-including the frame a thumbnail, a screenshot, or the GitHub mobile app
-captures. The base state is the finished state, so a renderer that ignores the
-animation entirely is also correct. It is wrapped in
-`prefers-reduced-motion: no-preference`.
+Two motions, both inside `prefers-reduced-motion: no-preference`.
+
+**The wash.** The card fades in week by week, once, then holds. Each column
+lifts from `.22` opacity to full rather than from zero, so every frame shows the
+whole mosaic — including the frame a thumbnail, a screenshot, or the GitHub
+mobile app captures. It lasts about 1.4s and plays only at image load, which
+makes it easy to miss on a cached page; that is the cost of keeping every frame
+readable.
+
+**The pulse.** The verdigris cells breathe continuously, 5.4s per cycle, phase
+spread across the columns so they are not in lockstep. Only the time nodes move;
+the mosaic itself never does, so the card is stable at any instant but the page
+is never entirely still.
+
+Two things make this work and are easy to break:
+
+- The pulse animates **`fill-opacity`**, not `opacity`. The wash already owns
+  `opacity`, and a second animation on the same property would replace it rather
+  than compose with it. On different properties they multiply.
+- `animation-delay` is a **list** property. A single value is applied to every
+  animation in the list, so the event cells need their own two-value rule
+  (`.ev.wN`), emitted after the `.m.wN` rules since both have the same
+  specificity.
+
+Neither cell type declares a base `fill-opacity`, so it defaults to 1 and a
+renderer that ignores animation still shows the finished card.
+
+A README loads an SVG as an `<img>`. Pointer events never reach inside it and
+script never runs, so hover and click are not available here at any price. Real
+per-day interaction needs a real page.
 
 A README loads an SVG as an `<img>`. Pointer events never reach inside it and
 script never runs, so hover and click are not available here at any price. Real
