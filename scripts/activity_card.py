@@ -228,12 +228,21 @@ def render(days, theme_name, login, stamp, note):
     events = event_days(counts)
     total = sum(counts)
     active = sum(1 for c in counts if c > 0)
-    peak_date = dates[counts.index(peak)]
+    peak_date = dates[counts.index(peak)] if peak else None      # an empty year has no peak day
     span = "the last year" if n >= 360 else "the last %d days" % n   # WINDOW_DAYS can shorten it
 
     grid_w = (cols - 1) * PITCH + 2 * RMAX
-    x0 = PADX + RMAX + (WIDTH - 2 * PADX - grid_w) / 2      # centre the grid in the measure
-    gx0, gx1 = x0 - RMAX, x0 - RMAX + grid_w
+    measure = WIDTH - 2 * PADX
+    if grid_w >= 0.8 * measure:
+        # A full year: centre the grid, and hang the text on its edges.
+        x0 = PADX + RMAX + (measure - grid_w) / 2
+        tx0, tx1 = x0 - RMAX, x0 - RMAX + grid_w
+    else:
+        # A short WINDOW_DAYS: grid on the left, text across the whole card,
+        # so the facts row and the legend still have room side by side.
+        x0 = PADX + RMAX
+        tx0, tx1 = PADX, WIDTH - PADX
+    gx0 = x0 - RMAX
     cy = [GRID_Y + RMAX + r * PITCH for r in range(7)]
     grid_bottom = cy[6] + RMAX
 
@@ -258,41 +267,48 @@ def render(days, theme_name, login, stamp, note):
 
     parts = []
     # The headline: the year's total, then what it is; who and when on the right.
-    big, bw = T.run(500, f"{total:,}", gx0, 60, 34, th["ink"], tracking=-0.035)
-    cap, _ = T.run(400, "contributions in " + span, gx0 + bw + 12, 60, 14, th["ink2"])
-    who, _ = T.run(500, login, gx1, 60, 13, th["ink2"], anchor="end", tracking=-0.005)
-    when, _ = T.run(400, "Updated " + nice_date(stamp), gx1, 41, 12, th["ink3"], anchor="end")
+    big, bw = T.run(500, f"{total:,}", tx0, 60, 34, th["ink"], tracking=-0.035)
+    cap, _ = T.run(400, "contributions in " + span, tx0 + bw + 12, 60, 14, th["ink2"])
+    who, _ = T.run(500, login, tx1, 60, 13, th["ink2"], anchor="end", tracking=-0.005)
+    when, _ = T.run(400, "Updated " + nice_date(stamp), tx1, 41, 12, th["ink3"], anchor="end")
     parts += [big, cap, who, when]
 
-    # Months under the grid: the first column's, then each month that starts
-    # at least three weeks after the last label and not in the last two weeks.
+    # Months under the grid, each over the week that holds its 1st. The month
+    # the window starts in keeps the first column only while the next month
+    # starts at least three weeks later; otherwise it gives way to that month,
+    # as GitHub's calendar does. A month starting in the last two weeks goes
+    # unlabelled.
     my = grid_bottom + 20
-    s, _ = T.run(400, nice_date(dates[0], False).split()[0], gx0 + 0.5, my, 11, th["ink3"], tracking=0.005)
-    parts.append(s)
-    last = 0
+    ticks = [(0, dates[0])]
     for i, iso in enumerate(dates):
-        if iso.endswith("-01"):
+        if i and iso.endswith("-01"):
             col = (i + lead) // 7
-            if col - last >= 3 and col <= cols - 3:
-                s, _ = T.run(400, nice_date(iso, False).split()[0], x0 + col * PITCH - RMAX + 0.5,
-                             my, 11, th["ink3"], tracking=0.005)
-                parts.append(s)
-                last = col
+            if col > cols - 3:
+                continue
+            if col - ticks[-1][0] >= 3:
+                ticks.append((col, iso))
+            elif len(ticks) == 1:
+                ticks[0] = (col, iso)
+    for col, iso in ticks:
+        s, _ = T.run(400, nice_date(iso, False).split()[0], gx0 + col * PITCH + 0.5, my, 11, th["ink3"],
+                     tracking=0.005)
+        parts.append(s)
 
     # A hairline, then the facts row and a size-only legend.
     ry = my + 22
-    parts.append(f'<rect x="{gx0:.1f}" y="{ry:.1f}" width="{grid_w:.1f}" height="1" fill="{th["rule"]}"/>')
+    parts.append(f'<rect x="{tx0:.1f}" y="{ry:.1f}" width="{tx1 - tx0:.1f}" height="1" fill="{th["rule"]}"/>')
     fy = ry + 30
-    x = gx0
-    for label, value in (("Peak day", f"{peak} on {nice_date(peak_date)}"),
+    x = tx0
+    for label, value in (("Peak day", f"{peak} on {nice_date(peak_date)}" if peak else "—"),
                          ("Active days", f"{active} of {n}")):
         s, w = T.run(400, label, x, fy, 12.5, th["ink3"])
         s2, w2 = T.run(500, value, x + w + 8, fy, 12.5, th["ink"])
         parts += [s, s2]
         x += w + 8 + w2 + 34
 
-    # The legend steps are sizes in one neutral mid hue, so colour stays the year's.
-    lx = gx1
+    # The legend steps are sizes in one fixed hue, the year's midpoint, so that
+    # only size reads as magnitude and colour stays the time of year.
+    lx = tx1
     s, w = T.run(400, "More", lx, fy, 12, th["ink3"], anchor="end")
     parts.append(s)
     lx -= w + 10
@@ -311,11 +327,12 @@ def render(days, theme_name, login, stamp, note):
     # The card washes in week by week, once, lifting each column from .22 to
     # full rather than from zero, so every frame - including the one a
     # thumbnail or the GitHub mobile app captures - shows the whole year. The
-    # glows breathe on fill-opacity, which composes with the wash's opacity
-    # instead of replacing it; their phase is spread so they are not in step.
+    # glows wash in on their group's opacity and breathe on their own
+    # fill-opacity; the two multiply. Their phase is spread so they are not
+    # in step.
     stagger = "".join(f".w{c}{{animation-delay:{0.08 + c * 0.018:.3f}s}}" for c in range(cols))
     phases = "".join(f".p{k}{{animation-delay:-{k * 0.6:.1f}s}}" for k in range(9))
-    title = f"{login} - {total:,} contributions in {span}, peak {peak} on {peak_date}"
+    title = f"{login} - {total:,} contributions in {span}" + (f", peak {peak} on {peak_date}" if peak else "")
     return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {WIDTH} {height}" width="{WIDTH}" height="{height}" role="img" aria-label="{esc(title)}">
 <title>{esc(title)}</title>
 <!-- {esc(note)} -->
@@ -330,7 +347,7 @@ def render(days, theme_name, login, stamp, note):
 {stagger}{phases}
 }}
 </style>
-<defs><filter id="soft" x="-5%" y="-20%" width="110%" height="140%"><feGaussianBlur stdDeviation="2.2"/></filter>{T.defs()}</defs>
+<defs><filter id="soft" filterUnits="userSpaceOnUse" x="{gx0 - 12:.1f}" y="{GRID_Y - 12}" width="{grid_w + 24:.1f}" height="{grid_bottom - GRID_Y + 24:.1f}"><feGaussianBlur stdDeviation="2.2"/></filter>{T.defs()}</defs>
 <rect width="{WIDTH}" height="{height}" rx="16" fill="{th["ground"]}"/>
 <g class="hl"><g filter="url(#soft)" opacity="{th["halo_op"]}">{"".join(halos)}</g></g>
 {grid}
