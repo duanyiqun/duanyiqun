@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """Render the contribution activity card as SVG.
 
-GitHub's own calendar sorts every day into one of four shades, so on this
-account a 137-contribution day is drawn exactly like a 23-contribution day:
-the top bucket alone holds 70% of the year's contributions, and 40% of the
-grid is flat grey carrying nothing. This card keeps the same day grid and
-fixes the encoding instead - magnitude is the area of the mark, on a log
+The card is the trailing year of public contributions as a day grid in the
+same shape as GitHub's own calendar - weeks across, weekdays down, Sunday on
+top - but with the encoding fixed. GitHub sorts every day into one of four
+shades, so on this account a 137-contribution day is drawn exactly like a
+23-contribution day. Here magnitude is the area of a round mark on a log
 scale, and quiet days shrink to a dot so the canvas belongs to the days that
 have data.
 
-Colour comes from the owner's design system. The hematite steps are defined
-there as "shallow section -> main rock section -> internal density peak",
-which is already a density ramp; silver.200 is "shallow layering and spatial
-transition", which is what a quiet day is; verdigris is reserved for
-"oxidation contact points and time nodes", so it marks only the heaviest days.
+The look is warm white and soft: the marks' hue drifts through the year from
+peach to rose to lilac to sky, magnitude adds a slight tone lift, and the
+heaviest tenth of days carry a faint glow of their own hue that breathes. The
+type is Geist, drawn as outlines from scripts/glyphs/, because an SVG inside
+an <img> can neither load a web font nor count on a system one.
 
 Standard library only, and the output is self-contained: no external
 references, nothing that needs the network to render inside an <img>.
@@ -25,6 +25,7 @@ import math
 import os
 import sys
 import urllib.request
+from datetime import date
 
 GRAPHQL = "https://api.github.com/graphql"
 
@@ -41,35 +42,34 @@ query($login: String!) {
 }
 """
 
-# --- the owner's design system -------------------------------------------
-TOKENS = {
-    "surface.membrane":      "#F6F3EF",
-    "ink.primary":           "#1A1C1E",
-    "structure.silver.700":  "#55595D",
-    "structure.silver.500":  "#9BA1A6",
-    "structure.silver.200":  "#E8E8E6",
-    "material.hematite.900": "#5A241D",
-    "material.hematite.700": "#8A3529",
-    "material.hematite.400": "#B96B5C",
-    "event.verdigris":       "#4E8577",
+# How the card is tuned. Both of these are meant to be edited.
+WINDOW_DAYS = None          # None = the whole calendar GitHub returns (about 52 weeks)
+EVENT_TOP_FRACTION = 0.10   # the heaviest tenth of active days glow
+
+# --- palette ---------------------------------------------------------------
+# The year's path: four low-saturation pastels, interpolated in OKLab.
+YEAR = ["#F4B79A", "#EDA8BC", "#C3B4EC", "#A8CBEE"]   # peach, rose, lilac, sky
+
+THEMES = {
+    "light": {"ground": "#F6F3EF", "ink": "#141414", "ink2": "#5E5B56", "ink3": "#9A958D",
+              "rule": "#E2DDD5", "zero": "#D9D3CA", "halo_op": 0.45},
+    "dark": {"ground": "#1A1917", "ink": "#EEEAE4", "ink2": "#ABA59C", "ink3": "#77726A",
+             "rule": "#2D2B28", "zero": "#3A3733", "halo_op": 0.40},
 }
 
-# How the card is tuned. Both of these are meant to be edited.
-WINDOW_DAYS = None      # None = the whole calendar GitHub returns (about 52 weeks)
-EVENT_TOP_FRACTION = 0.10   # the heaviest tenth of active days are time nodes
+# --- geometry ---------------------------------------------------------------
+WIDTH = 896
+PADX = 40
+PITCH = 15.3        # centre to centre, in both directions
+RMAX = 6.2          # a peak day nearly fills its cell
+R0 = 1.8            # area floor, so a 1-contribution day is still a visible mark
+RZ = 1.15           # a quiet day
+GRID_Y = 92         # top edge of the Sunday row
 
-# --- geometry -------------------------------------------------------------
-PAD = 24
-PITCH = 16.0
-GAP = 3.2
-CELL = PITCH - GAP
-GRID_TOP = 26
-HEAD_Y = 14
-MONO = "ui-monospace,SFMono-Regular,Menlo,Consolas,'DejaVu Sans Mono',monospace"
-MONO_ADVANCE = 0.605    # holds across SF Mono, Menlo, Consolas and DejaVu Sans Mono
+GLYPHS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "glyphs")
 
 
-# --- OKLab, so the ramp does not go muddy between the designer's steps -----
+# --- OKLab, so the year's path does not go muddy between the pastels -------
 def _hex2rgb(h):
     h = h.lstrip("#")
     return tuple(int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))
@@ -110,37 +110,71 @@ def _oklab2rgb(lab):
         -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s))
 
 
-def ramp(stops, t):
-    t = max(0.0, min(1.0, t))
-    n = len(stops) - 1
-    seg = min(int(t * n), n - 1)
-    f = t * n - seg
-    a, b = _rgb2oklab(_hex2rgb(stops[seg])), _rgb2oklab(_hex2rgb(stops[seg + 1]))
-    return _rgb2hex(_oklab2rgb(tuple(a[i] + (b[i] - a[i]) * f for i in range(3))))
+YEAR_LAB = [_rgb2oklab(_hex2rgb(h)) for h in YEAR]
 
 
-HEMATITE = [TOKENS["material.hematite.400"], TOKENS["material.hematite.700"],
-            TOKENS["material.hematite.900"]]
+def tone(s, t, theme):
+    """The mark colour: hue from the time of year s, a tone lift from magnitude t.
 
-THEMES = {
-    # On membrane the ramp runs light to dark, as the tokens are numbered.
-    "light": {
-        "ground": TOKENS["surface.membrane"], "fg": TOKENS["ink.primary"],
-        "sub": TOKENS["structure.silver.700"], "tick": TOKENS["structure.silver.500"],
-        "quiet": TOKENS["structure.silver.200"], "quiet_op": 1.0,
-        "stops": HEMATITE,
-    },
-    # On ink it runs the other way: a density peak painted hematite.900 would
-    # disappear into the ground, so the peak has to be the most luminous step.
-    "dark": {
-        "ground": TOKENS["ink.primary"], "fg": TOKENS["surface.membrane"],
-        "sub": TOKENS["structure.silver.500"], "tick": TOKENS["structure.silver.700"],
-        "quiet": TOKENS["structure.silver.700"], "quiet_op": 0.55,
-        "stops": list(reversed(HEMATITE)),
-    },
-}
+    On warm white, busier days settle a little deeper and more saturated. On
+    charcoal the lift runs the other way, so busy days glow.
+    """
+    n = len(YEAR_LAB) - 1
+    seg = min(int(s * n), n - 1)
+    f = s * n - seg
+    a, b = YEAR_LAB[seg], YEAR_LAB[seg + 1]
+    L0, A, B = (a[i] + (b[i] - a[i]) * f for i in range(3))
+    chroma, hue = math.hypot(A, B), math.atan2(B, A)
+    if theme == "light":
+        L, C = L0 + 0.04 - 0.115 * t, chroma * (0.72 + 0.38 * t)
+    else:
+        L, C = 0.50 + 0.32 * t, chroma * (0.66 + 0.40 * t)
+    return _rgb2hex(_oklab2rgb((L, C * math.cos(hue), C * math.sin(hue))))
 
 
+# --- type ---------------------------------------------------------------------
+class Type:
+    """Sets lines of Geist as outlines, with the font's kerning.
+
+    Each glyph is outlined once into <defs> and every run places it with <use>,
+    which keeps the card well inside check_svg.py's 60 KB budget.
+    """
+
+    def __init__(self):
+        self.fonts, self.ids = {}, {}
+
+    def _font(self, weight):
+        if weight not in self.fonts:
+            with open(os.path.join(GLYPHS, "geist-%d.json" % weight)) as fh:
+                self.fonts[weight] = json.load(fh)
+        return self.fonts[weight]
+
+    def run(self, weight, text, x, y, size, fill, tracking=0.0, anchor="start"):
+        """`text` with its baseline at y; returns (svg, width). tracking is in em."""
+        f = self._font(weight)
+        upm, glyphs, kern = f["unitsPerEm"], f["glyphs"], f["kern"]
+        pen, parts = 0.0, []
+        for i, ch in enumerate(text):
+            if ch not in glyphs:
+                ch = "?"
+            if glyphs[ch]["d"]:
+                gid = self.ids.setdefault((weight, ch), "g%x" % len(self.ids))
+                parts.append(f'<use href="#{gid}" x="{pen:.0f}"/>')
+            pen += glyphs[ch]["adv"] + kern.get(text[i:i + 2], 0)
+            if i < len(text) - 1:
+                pen += tracking * upm
+        k = size / upm
+        if anchor == "end":
+            x -= pen * k
+        return (f'<g transform="translate({x:.2f} {y:.2f}) scale({k:.5f} {-k:.5f})" fill="{fill}">'
+                + "".join(parts) + "</g>"), pen * k
+
+    def defs(self):
+        return "".join(f'<path id="{gid}" d="{self._font(w)["glyphs"][ch]["d"]}"/>'
+                       for (w, ch), gid in self.ids.items())
+
+
+# --- data -------------------------------------------------------------------
 def fetch_calendar(login, token):
     body = json.dumps({"query": QUERY, "variables": {"login": login}}).encode()
     req = urllib.request.Request(GRAPHQL, data=body, headers={
@@ -163,13 +197,8 @@ def load_fixture(path):
     return [(d["date"], int(d["count"])) for d in blob["days"]]
 
 
-def month_label(iso):
-    names = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split()
-    return names[int(iso[5:7]) - 1]
-
-
 def event_days(counts):
-    """The heaviest slice of active days - the contact points."""
+    """The heaviest slice of active days - the ones that glow."""
     active = sorted((i for i, c in enumerate(counts) if c > 0), key=lambda i: -counts[i])
     if not active:
         return set()
@@ -177,102 +206,135 @@ def event_days(counts):
 
 
 def esc(s):
-    return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
 
+def nice_date(iso, year=True):
+    d = date.fromisoformat(iso)
+    return "%s %d" % (d.strftime("%b"), d.day) + (", %d" % d.year if year else "")
+
+
+# --- the card ---------------------------------------------------------------
 def render(days, theme_name, login, stamp, note):
     th = THEMES[theme_name]
+    T = Type()
     dates = [d for d, _ in days]
     counts = [c for _, c in days]
     n = len(counts)
-    cols = math.ceil(n / 7)
-    width = PAD + cols * PITCH + PAD
-    grid_h = 7 * PITCH
-    height = GRID_TOP + grid_h + 46
-    peak = max(counts) if counts else 0
+    lead = (date.fromisoformat(dates[0]).weekday() + 1) % 7   # Sunday-first rows, as GitHub draws them
+    cols = math.ceil((n + lead) / 7)
+    peak = max(counts)
     scale = math.log1p(peak) if peak else 1.0
     events = event_days(counts)
-    min_mark = 3.4
-
-    def t(c):
-        return math.log1p(c) / scale if c > 0 else 0.0
-
-    marks = []
-    for i, c in enumerate(counts):
-        col, row = divmod(i, 7)
-        x, y = PAD + col * PITCH, GRID_TOP + row * PITCH
-        if c == 0:
-            off = (CELL - 2.8) / 2
-            marks.append(f'<rect class="m w{col}" x="{x + off:.2f}" y="{y + off:.2f}" '
-                         f'width="2.8" height="2.8" fill="{th["quiet"]}" '
-                         f'fill-opacity="{th["quiet_op"]}"/>')
-            continue
-        size = min_mark + (CELL - min_mark) * t(c)
-        off = (CELL - size) / 2
-        is_event = i in events
-        fill = TOKENS["event.verdigris"] if is_event else ramp(th["stops"], t(c))
-        cls = "m ev" if is_event else "m"
-        marks.append(f'<rect class="{cls} w{col}" x="{x + off:.2f}" y="{y + off:.2f}" '
-                     f'width="{size:.2f}" height="{size:.2f}" fill="{fill}"/>')
-
-    ticks, seen = [], None
-    for i, iso in enumerate(dates):
-        if iso[:7] != seen:
-            seen = iso[:7]
-            col = i // 7
-            if 0 < col < cols - 2:
-                ticks.append(f'<text class="tick" x="{PAD + col * PITCH:.1f}" '
-                             f'y="{GRID_TOP + grid_h + 14:.0f}">{month_label(iso)}</text>')
-
     total = sum(counts)
     active = sum(1 for c in counts if c > 0)
-    peak_date = dates[counts.index(peak)] if peak else ""
-    stats, x = [], PAD
-    sy = GRID_TOP + grid_h + 36
-    for value, label in ((f"{total:,}", "contributions"),
-                         (str(peak), "peak · %s" % peak_date),
-                         (f"{active}/{n}", "active days")):
-        stats.append(f'<text class="val" x="{x:.0f}" y="{sy:.0f}">{esc(value)}</text>')
-        vw = len(value) * 13 * MONO_ADVANCE
-        stats.append(f'<text class="lbl" x="{x + vw + 7:.0f}" y="{sy:.0f}">{esc(label)}</text>')
-        x += vw + 7 + len(label) * 9 * MONO_ADVANCE + 30
+    peak_date = dates[counts.index(peak)]
+    span = "the last year" if n >= 360 else "the last %d days" % n   # WINDOW_DAYS can shorten it
 
-    # A one-time wash across the year, week by week. It lifts each column from
-    # .22 to full rather than from zero, so every frame - including the one a
-    # thumbnail or the GitHub mobile app captures - shows the whole mosaic. The
-    # base state is the finished state, so not animating at all is also correct.
-    # animation-delay is a list property: one value would be applied to both
-    # animations, so the event cells need their own two-value rule. Same
-    # specificity as the .m rule, so these have to come after it.
-    stagger = "".join(f".m.w{c}{{animation-delay:{0.10 + c * 0.017:.3f}s}}" for c in range(cols))
-    stagger += "".join(
-        f".ev.w{c}{{animation-delay:{0.10 + c * 0.017:.3f}s,-{(c / max(1, cols - 1)) * 2.1:.2f}s}}"
-        for c in range(cols))
+    grid_w = (cols - 1) * PITCH + 2 * RMAX
+    x0 = PADX + RMAX + (WIDTH - 2 * PADX - grid_w) / 2      # centre the grid in the measure
+    gx0, gx1 = x0 - RMAX, x0 - RMAX + grid_w
+    cy = [GRID_Y + RMAX + r * PITCH for r in range(7)]
+    grid_bottom = cy[6] + RMAX
 
-    return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width:.0f} {height:.0f}" width="{width:.0f}" height="{height:.0f}" role="img" aria-label="{esc(login)} contribution activity: {total:,} contributions over {n} days, peak {peak} on {peak_date}">
-<title>{esc(login)} — {total:,} contributions, peak {peak} on {peak_date}</title>
+    # One <g> per week, translated, so each mark only carries cy, r and fill.
+    colmarks = [[] for _ in range(cols)]
+    halos = []
+    for i, c in enumerate(counts):
+        col, row = divmod(i + lead, 7)
+        y = cy[row]
+        if c == 0:
+            colmarks[col].append(f'<circle cy="{y:.1f}" r="{RZ}" class="z"/>')
+            continue
+        t = math.log1p(c) / scale
+        r = math.sqrt(R0 * R0 + (RMAX * RMAX - R0 * R0) * t)     # area grows with log magnitude
+        fill = tone(col / max(1, cols - 1), t, theme_name)
+        if i in events:
+            halos.append(f'<circle cx="{x0 + col * PITCH:.1f}" cy="{y:.1f}" r="{r + 2.6:.1f}" '
+                         f'fill="{fill}" class="h p{col % 9}"/>')
+        colmarks[col].append(f'<circle cy="{y:.1f}" r="{r:.2f}" fill="{fill}"/>')
+    grid = "".join(f'<g class="c w{c}" transform="translate({x0 + c * PITCH:.1f} 0)">{"".join(m)}</g>'
+                   for c, m in enumerate(colmarks))
+
+    parts = []
+    # The headline: the year's total, then what it is; who and when on the right.
+    big, bw = T.run(500, f"{total:,}", gx0, 60, 34, th["ink"], tracking=-0.035)
+    cap, _ = T.run(400, "contributions in " + span, gx0 + bw + 12, 60, 14, th["ink2"])
+    who, _ = T.run(500, login, gx1, 60, 13, th["ink2"], anchor="end", tracking=-0.005)
+    when, _ = T.run(400, "Updated " + nice_date(stamp), gx1, 41, 12, th["ink3"], anchor="end")
+    parts += [big, cap, who, when]
+
+    # Months under the grid: the first column's, then each month that starts
+    # at least three weeks after the last label and not in the last two weeks.
+    my = grid_bottom + 20
+    s, _ = T.run(400, nice_date(dates[0], False).split()[0], gx0 + 0.5, my, 11, th["ink3"], tracking=0.005)
+    parts.append(s)
+    last = 0
+    for i, iso in enumerate(dates):
+        if iso.endswith("-01"):
+            col = (i + lead) // 7
+            if col - last >= 3 and col <= cols - 3:
+                s, _ = T.run(400, nice_date(iso, False).split()[0], x0 + col * PITCH - RMAX + 0.5,
+                             my, 11, th["ink3"], tracking=0.005)
+                parts.append(s)
+                last = col
+
+    # A hairline, then the facts row and a size-only legend.
+    ry = my + 22
+    parts.append(f'<rect x="{gx0:.1f}" y="{ry:.1f}" width="{grid_w:.1f}" height="1" fill="{th["rule"]}"/>')
+    fy = ry + 30
+    x = gx0
+    for label, value in (("Peak day", f"{peak} on {nice_date(peak_date)}"),
+                         ("Active days", f"{active} of {n}")):
+        s, w = T.run(400, label, x, fy, 12.5, th["ink3"])
+        s2, w2 = T.run(500, value, x + w + 8, fy, 12.5, th["ink"])
+        parts += [s, s2]
+        x += w + 8 + w2 + 34
+
+    # The legend steps are sizes in one neutral mid hue, so colour stays the year's.
+    lx = gx1
+    s, w = T.run(400, "More", lx, fy, 12, th["ink3"], anchor="end")
+    parts.append(s)
+    lx -= w + 10
+    for tt in (1.0, 0.7, 0.45, 0.2, 0.0):
+        r = math.sqrt(R0 * R0 + (RMAX * RMAX - R0 * R0) * tt)
+        lx -= r
+        parts.append(f'<circle cx="{lx:.1f}" cy="{fy - 4.3:.1f}" r="{r:.2f}" fill="{tone(0.62, tt, theme_name)}"/>')
+        lx -= r + 5
+    lx += 1
+    parts.append(f'<circle cx="{lx - RZ:.1f}" cy="{fy - 4.3:.1f}" r="{RZ}" class="z"/>')
+    lx -= 2 * RZ + 10
+    s, _ = T.run(400, "Less", lx, fy, 12, th["ink3"], anchor="end")
+    parts.append(s)
+
+    height = round(fy + 30)
+    # The card washes in week by week, once, lifting each column from .22 to
+    # full rather than from zero, so every frame - including the one a
+    # thumbnail or the GitHub mobile app captures - shows the whole year. The
+    # glows breathe on fill-opacity, which composes with the wash's opacity
+    # instead of replacing it; their phase is spread so they are not in step.
+    stagger = "".join(f".w{c}{{animation-delay:{0.08 + c * 0.018:.3f}s}}" for c in range(cols))
+    phases = "".join(f".p{k}{{animation-delay:-{k * 0.6:.1f}s}}" for k in range(9))
+    title = f"{login} - {total:,} contributions in {span}, peak {peak} on {peak_date}"
+    return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {WIDTH} {height}" width="{WIDTH}" height="{height}" role="img" aria-label="{esc(title)}">
+<title>{esc(title)}</title>
 <!-- {esc(note)} -->
 <style>
-text{{font-family:{MONO}}}
-.hd{{font-size:9.5px;letter-spacing:.14em;fill:{th["sub"]}}}
-.meta{{font-size:9.5px;letter-spacing:.08em;fill:{th["tick"]}}}
-.tick{{font-size:9px;letter-spacing:.1em;fill:{th["tick"]}}}
-.val{{font-size:13px;fill:{th["fg"]}}}
-.lbl{{font-size:9px;letter-spacing:.1em;fill:{th["sub"]}}}
+.z{{fill:{th["zero"]}}}
 @media (prefers-reduced-motion:no-preference){{
-.m{{animation:wash .45s cubic-bezier(.16,1,.3,1) 1 backwards}}
-.ev{{animation:wash .45s cubic-bezier(.16,1,.3,1) 1 backwards,pulse 5.4s ease-in-out infinite}}
+.c{{animation:wash .6s cubic-bezier(.16,1,.3,1) 1 backwards}}
+.hl{{animation:wash 1.2s ease-out .7s 1 backwards}}
+.h{{animation:pulse 5.4s ease-in-out infinite}}
 @keyframes wash{{from{{opacity:.22}}to{{opacity:1}}}}
-@keyframes pulse{{0%,100%{{fill-opacity:1}}50%{{fill-opacity:.72}}}}
-{stagger}
+@keyframes pulse{{0%,100%{{fill-opacity:1}}50%{{fill-opacity:.35}}}}
+{stagger}{phases}
 }}
 </style>
-<rect width="{width:.0f}" height="{height:.0f}" fill="{th["ground"]}"/>
-<text class="hd" x="{PAD}" y="{HEAD_Y}">CONTRIBUTION ACTIVITY · {n} DAYS · AREA BY MAGNITUDE · LOG</text>
-<text class="meta" x="{width - PAD:.0f}" y="{HEAD_Y}" text-anchor="end">{esc(login)} · {esc(stamp)}</text>
-{''.join(marks)}
-{''.join(ticks)}
-{''.join(stats)}
+<defs><filter id="soft" x="-5%" y="-20%" width="110%" height="140%"><feGaussianBlur stdDeviation="2.2"/></filter>{T.defs()}</defs>
+<rect width="{WIDTH}" height="{height}" rx="16" fill="{th["ground"]}"/>
+<g class="hl"><g filter="url(#soft)" opacity="{th["halo_op"]}">{"".join(halos)}</g></g>
+{grid}
+{"".join(parts)}
 </svg>
 '''
 
@@ -282,7 +344,7 @@ def main():
     ap.add_argument("--login", default="duanyiqun")
     ap.add_argument("--out", default="out")
     ap.add_argument("--fixture", help="render from a fixture instead of the live API")
-    ap.add_argument("--stamp", required=True, help="UTC date stamp, e.g. 2026-09-04")
+    ap.add_argument("--stamp", required=True, help="UTC date stamp, e.g. 2026-10-17")
     args = ap.parse_args()
 
     if args.fixture:
