@@ -15,7 +15,10 @@ trailing year of public contributions, in light and dark variants.
 - **The headline** is the year's total in large type, then "contributions in
   the last year", with the login and "Updated <date>" on the right.
 - **The grid** has the same shape as GitHub's calendar: weeks across, weekdays
-  down, Sunday on top.
+  down, Sunday on top. Each month's name sits over the week that holds its
+  1st. The month the window starts in keeps the first column only while the
+  next month starts at least three weeks later; otherwise it gives way, as on
+  GitHub.
 - **The facts row** under a hairline gives the peak day and the active days,
   with a size legend on the right.
 
@@ -52,8 +55,8 @@ between them. Magnitude adds a slight tone lift on top of the area:
 - **On charcoal** the lift runs the other way, so busy days glow. A deep mark
   would sink into a dark ground.
 
-The legend is drawn in one neutral mid hue on purpose, so that colour keeps
-meaning "time of year" and only size means "how much".
+The legend's steps are all drawn in one fixed hue, the year's midpoint, so
+that colour keeps meaning "time of year" and only size means "how much".
 
 The heaviest tenth of active days get a **glow**: a blurred halo in their own
 hue at 40–45% opacity behind the mark.
@@ -84,8 +87,10 @@ Both are constants near the top of `scripts/activity_card.py`:
 
 - `WINDOW_DAYS` — `None` renders the whole calendar GitHub returns, about 52
   weeks. Set it to `182` for a trailing half-year; the headline then says "the
-  last 182 days". The trade: a shorter window is denser, and a longer one keeps
-  the ramp-up visible and averages out quiet stretches.
+  last 182 days", the grid moves to the left edge, and the text rows span the
+  whole card so the facts row and the legend still fit side by side. The trade:
+  a shorter window is denser, and a longer one keeps the ramp-up visible and
+  averages out quiet stretches.
 - `EVENT_TOP_FRACTION` — how much of the active-day list glows. `0.10` puts
   about 28 glows on the sample year (a tenth of 289 active days). Below about
   0.05 the glows look arbitrary; above about 0.15 they stop reading as an
@@ -136,12 +141,14 @@ marks never do, so the card is stable at any instant but never entirely still.
 
 Two things to keep if you change it:
 
-- The pulse animates **`fill-opacity`** on the halos, and the wash animates
-  **`opacity`** on the group around them. Two animations on the same property
-  would replace each other rather than compose; on different properties they
-  multiply.
-- Nothing declares a base opacity, so a renderer that ignores animation still
-  shows the finished card.
+- The glows' wash animates **`opacity`** on the group around them, and the
+  pulse animates **`fill-opacity`** on the halos themselves, so the two
+  multiply. If you ever move both onto the same element, keep them on
+  different properties: two animations of one property on one element replace
+  each other instead of composing.
+- The `.22` starting opacity lives only in the keyframes. No element declares
+  it as its static value, so a renderer that ignores animation still shows the
+  finished card.
 
 A README loads an SVG as an `<img>`. Pointer events never reach inside it and
 script never runs, so hover and click are not available here at any price. Real
